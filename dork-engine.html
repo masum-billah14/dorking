@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dork Engine</title>
+<style>
+  @font-face {
+    font-family: 'JBM';
+    src: local('JetBrains Mono');
+  }
+  :root{
+    --bg: #13161a;
+    --bg-raised: #1a1e24;
+    --line: #2a2f36;
+    --text: #d9dde2;
+    --dim: #7b8492;
+    --signal: #ffb400;
+    --signal-dim: #7a5c17;
+    --ok: #6fbf8b;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,180,0,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family: 'JBM','JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+    font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:920px; margin:0 auto; padding:36px 20px 80px; }
+
+  .topline{
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:1px solid var(--line);
+    padding-bottom:14px; margin-bottom:28px;
+  }
+  .brand{ font-size:15px; letter-spacing:0.04em; color:var(--text); }
+  .brand b{ color:var(--signal); font-weight:600; }
+  .clock{ color:var(--dim); font-size:12px; }
+
+  .target-row{
+    display:flex; gap:10px; margin-bottom:6px;
+  }
+  .target-label{
+    color:var(--dim); font-size:12px; align-self:center; white-space:nowrap;
+    padding-right:4px;
+  }
+  #domain{
+    flex:1;
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:inherit;
+    font-size:16px;
+    padding:12px 14px;
+    outline:none;
+    border-radius:3px;
+  }
+  #domain:focus{ border-color:var(--signal-dim); }
+  #domain::placeholder{ color:#4b525c; }
+  .status{
+    font-size:12px; color:var(--dim); margin-bottom:30px; min-height:16px;
+  }
+  .status.armed{ color:var(--ok); }
+
+  .section{ margin-bottom:26px; }
+  .section-head{
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:10px;
+  }
+  .section-head .n{ color:var(--signal); font-size:12px; width:20px; }
+  .section-head h2{
+    font-size:13px; font-weight:500; margin:0;
+    color:var(--text); letter-spacing:0.02em;
+  }
+  .section-head .rule{ flex:1; height:1px; background:var(--line); }
+  .section-head .openall{
+    background:none; border:1px solid var(--line); color:var(--dim);
+    font-family:inherit; font-size:10.5px; padding:4px 8px; border-radius:3px;
+    cursor:pointer; letter-spacing:0.02em;
+  }
+  .section-head .openall:not(:disabled):hover{ border-color:var(--signal-dim); color:var(--signal); }
+  .section-head .openall:disabled{ cursor:not-allowed; opacity:0.4; }
+  .section-desc{ color:var(--dim); font-size:12px; margin:0 0 12px 30px; max-width:65ch; }
+  button.dork .tag{
+    color:var(--signal); font-size:9.5px; letter-spacing:0.04em;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(210px,1fr));
+    gap:8px;
+    margin-left:30px;
+  }
+  button.dork{
+    text-align:left;
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:inherit;
+    font-size:12.5px;
+    padding:10px 12px;
+    border-radius:3px;
+    cursor:pointer;
+    transition: border-color .12s ease, background .12s ease;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  button.dork:disabled{ cursor:not-allowed; opacity:0.45; }
+  button.dork:not(:disabled):hover{
+    border-color:var(--signal-dim);
+    background:#1f242b;
+  }
+  button.dork .label{ color:var(--text); }
+  button.dork .q{
+    color:var(--dim); font-size:11px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  button.dork:not(:disabled):hover .q{ color:var(--signal); }
+
+  footer{
+    margin-top:36px; padding-top:16px; border-top:1px solid var(--line);
+    color:var(--dim); font-size:11px; line-height:1.6;
+  }
+  footer b{ color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topline">
+    <div class="brand"><b>&gt;_</b> dork-engine</div>
+    <div class="clock" id="clock"></div>
+  </div>
+
+  <div class="target-row">
+    <span class="target-label">TARGET</span>
+    <input id="domain" type="text" placeholder="example.com" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="status" id="status">enter a domain to arm the queries below</div>
+
+  <div id="sections"></div>
+
+  <footer>
+    <b>Note:</b> most buttons open a Google search in a new tab; buttons tagged "EXTERNAL ↗" open a dedicated
+    third-party recon service (crt.sh, Wayback Machine, Shodan, etc.) instead. Nothing is scraped or sent anywhere by this page itself.
+    Use only against domains you're authorized to test (bug bounty scope, or your own infrastructure).
+    Google may occasionally show a CAPTCHA if you fire off many queries in a row — "open all" makes that more likely, use it sparingly.
+  </footer>
+</div>
+
+<script>
+const DORKS = [
+  {
+    title: "Documents",
+    desc: "Publicly indexed files that often leak internal structure, names, or metadata.",
+    items: [
+      ["Find PDFs", d => `site:${d} filetype:pdf`],
+      ["Find Word docs", d => `site:${d} (filetype:doc OR filetype:docx)`],
+      ["Find Excel sheets", d => `site:${d} (filetype:xls OR filetype:xlsx OR filetype:csv)`],
+      ["Find PowerPoints", d => `site:${d} (filetype:ppt OR filetype:pptx)`],
+      ["Find text files", d => `site:${d} filetype:txt`],
+    ]
+  },
+  {
+    title: "Access points",
+    desc: "Login, admin, and account surfaces worth knowing about before you test them.",
+    items: [
+      ["Login pages", d => `site:${d} inurl:login`],
+      ["Admin panels", d => `site:${d} inurl:admin`],
+      ["Signup / register", d => `site:${d} (inurl:signup OR inurl:register)`],
+      ["Portals / dashboards", d => `site:${d} (inurl:portal OR inurl:dashboard)`],
+      ["API endpoints", d => `site:${d} inurl:api`],
+    ]
+  },
+  {
+    title: "Exposed files & directories",
+    desc: "Config, backup, and listing pages that shouldn't normally be public.",
+    items: [
+      ["Directory listings", d => `site:${d} intitle:"index of"`],
+      ["Env / config files", d => `site:${d} (filetype:env OR filetype:conf OR filetype:config OR filetype:ini)`],
+      ["SQL files", d => `site:${d} filetype:sql`],
+      ["Log files", d => `site:${d} filetype:log`],
+      ["Backup files", d => `site:${d} (filetype:bak OR filetype:backup OR filetype:old)`],
+      ["Archives", d => `site:${d} (filetype:zip OR filetype:tar OR filetype:tar.gz OR filetype:rar)`],
+      ["XML files", d => `site:${d} filetype:xml`],
+      ["Keys & certs", d => `site:${d} (filetype:pem OR filetype:key OR filetype:pfx OR filetype:p12)`],
+    ]
+  },
+  {
+    title: "Error & debug leakage",
+    desc: "Stack traces and debug output that reveal stack, versions, or paths.",
+    items: [
+      ["SQL errors", d => `site:${d} intext:"sql syntax near"`],
+      ["PHP warnings", d => `site:${d} intext:"Warning:" intext:"on line"`],
+      ["phpinfo() pages", d => `site:${d} inurl:phpinfo`],
+      ["Stack traces", d => `site:${d} intext:"stack trace" intext:"at line"`],
+    ]
+  },
+  {
+    title: "Credential & secret hints",
+    desc: "Pages that mention credentials in plaintext — often old docs or misconfigured pages.",
+    items: [
+      ["\"password\" mentions", d => `site:${d} intext:"password"`],
+      ["API key mentions", d => `site:${d} (intext:"api_key" OR intext:"apikey" OR intext:"secret_key")`],
+      ["AWS keys", d => `site:${d} "AKIA"`],
+      [".git exposure", d => `site:${d} inurl:.git`],
+    ]
+  },
+  {
+    title: "Third-party leaks",
+    desc: "Mentions of the domain on sites outside its own control — pastes, code, docs.",
+    items: [
+      ["Pastebin mentions", d => `site:pastebin.com "${d}"`],
+      ["GitHub mentions", d => `site:github.com "${d}"`],
+      ["GitLab mentions", d => `site:gitlab.com "${d}"`],
+      ["Google Docs/Drive", d => `site:docs.google.com "${d}"`],
+      ["Stack Overflow", d => `site:stackoverflow.com "${d}"`],
+      ["Trello boards", d => `site:trello.com "${d}"`],
+    ]
+  },
+  {
+    title: "Infrastructure & subdomains",
+    desc: "Cloud storage and non-www hosts related to the target.",
+    items: [
+      ["All subdomains (minus www)", d => `site:${d} -site:www.${d}`],
+      ["S3 buckets", d => `site:s3.amazonaws.com "${d}"`],
+      ["Azure blobs", d => `site:blob.core.windows.net "${d}"`],
+      ["Google Cloud Storage", d => `site:storage.googleapis.com "${d}"`],
+      ["Jenkins / CI", d => `site:${d} inurl:jenkins`],
+    ]
+  },
+  {
+    title: "People & social",
+    desc: "Employee footprint useful for social-engineering-aware recon and OSINT context.",
+    items: [
+      ["LinkedIn employees", d => `site:linkedin.com/in "${d}"`],
+      ["Twitter / X mentions", d => `site:twitter.com "${d}"`],
+      ["Resumes mentioning domain", d => `site:${d} (resume OR cv) filetype:pdf`],
+      ["Email format hints", d => `site:${d} "@${d}"`],
+    ]
+  },
+  {
+    title: "CMS-specific",
+    desc: "Fires only when relevant — harmless to click even if the target isn't running these.",
+    items: [
+      ["WordPress content", d => `site:${d} inurl:wp-content`],
+      ["WordPress admin", d => `site:${d} inurl:wp-admin`],
+      ["Drupal", d => `site:${d} inurl:sites/default/files`],
+      ["Joomla", d => `site:${d} inurl:administrator`],
+    ]
+  },
+  {
+    title: "API & schema exposure",
+    desc: "Machine-readable interface definitions — often reveal endpoints nobody meant to publish.",
+    items: [
+      ["Swagger / OpenAPI JSON", d => `site:${d} (inurl:swagger.json OR inurl:openapi.json OR intitle:"Swagger UI")`],
+      ["GraphQL endpoints", d => `site:${d} inurl:graphql`],
+      ["Postman collections", d => `site:${d} filetype:json inurl:postman`],
+      ["WSDL files", d => `site:${d} filetype:wsdl`],
+      ["API docs pages", d => `site:${d} (inurl:api-docs OR inurl:redoc OR inurl:docs/api)`],
+      ["Firebase realtime DB", d => `site:firebaseio.com "${d}"`],
+    ]
+  },
+  {
+    title: "DevOps & secrets in code",
+    desc: "Build, deploy, and infra files that sometimes ship with credentials baked in.",
+    items: [
+      ["Dockerfiles / compose", d => `site:${d} (filetype:yml inurl:docker-compose OR inurl:Dockerfile)`],
+      ["CI configs", d => `site:${d} (inurl:.travis.yml OR inurl:.circleci OR inurl:Jenkinsfile)`],
+      ["Terraform state", d => `site:${d} filetype:tfstate`],
+      [".DS_Store leaks", d => `site:${d} filetype:DS_Store`],
+      ["htpasswd / htaccess", d => `site:${d} (filetype:htpasswd OR filetype:htaccess)`],
+      ["npm/yarn lockfiles", d => `site:${d} (inurl:package-lock.json OR inurl:yarn.lock)`],
+      ["Kubeconfig files", d => `site:${d} filetype:yaml inurl:kubeconfig`],
+      ["Source maps", d => `site:${d} filetype:map inurl:.js.map`],
+    ]
+  },
+  {
+    title: "Cloud & internal dashboards",
+    desc: "Monitoring, orchestration, and data tools that shouldn't be internet-facing.",
+    items: [
+      ["Jenkins dashboards", d => `site:${d} intitle:"Dashboard [Jenkins]"`],
+      ["Kibana", d => `site:${d} intitle:"Kibana"`],
+      ["Grafana", d => `site:${d} intitle:"Grafana" inurl:login`],
+      ["Elasticsearch", d => `site:${d} inurl:_search intitle:elasticsearch`],
+      ["Jupyter notebooks", d => `site:${d} intitle:"Jupyter Notebook"`],
+      ["Default/welcome pages", d => `site:${d} (intitle:"Welcome to nginx" OR intitle:"Apache2 Default Page" OR intitle:"IIS Windows Server")`],
+    ]
+  },
+  {
+    title: "Parameters worth manual testing",
+    desc: "Not proof of a bug — just narrows down URLs with parameter shapes worth probing by hand (IDOR, SSRF, redirect, LFI).",
+    items: [
+      ["ID / numeric params", d => `site:${d} inurl:id=`],
+      ["Redirect params", d => `site:${d} (inurl:redirect= OR inurl:url= OR inurl:next=)`],
+      ["File / path params", d => `site:${d} (inurl:file= OR inurl:page= OR inurl:path=)`],
+      ["Callback / SSRF-prone", d => `site:${d} (inurl:callback= OR inurl:webhook= OR inurl:fetch=)`],
+      ["Token / key in URL", d => `site:${d} (inurl:token= OR inurl:api_key=)`],
+    ]
+  },
+  {
+    title: "External recon shortcuts",
+    desc: "Not Google dorks — these open dedicated recon services directly for the same target.",
+    items: [
+      ["crt.sh certificate log", d => `https://crt.sh/?q=%25.${d}`, 'direct'],
+      ["Wayback Machine snapshots", d => `https://web.archive.org/web/*/${d}/*`, 'direct'],
+      ["Shodan host search", d => `https://www.shodan.io/search?query=hostname%3A${d}`, 'direct'],
+      ["VirusTotal domain report", d => `https://www.virustotal.com/gui/domain/${d}`, 'direct'],
+      ["GitHub code search", d => `https://github.com/search?q=%22${d}%22&type=code`, 'direct'],
+      ["SecurityHeaders scan", d => `https://securityheaders.com/?q=${d}`, 'direct'],
+    ]
+  },
+  {
+    title: "Search operators",
+    desc: "Raw Google operators for lateral moves once you've found something interesting.",
+    items: [
+      ["Cached version", d => `cache:${d}`],
+      ["Related sites", d => `related:${d}`],
+      ["Non-HTTPS pages", d => `site:${d} -inurl:https`],
+      ["Everything except homepage", d => `site:${d} -inurl:"www.${d}/$"`],
+      ["Mentions elsewhere on the web", d => `"${d}" -site:${d}`],
+    ]
+  },
+];
+
+const domainInput = document.getElementById('domain');
+const statusEl = document.getElementById('status');
+const sectionsEl = document.getElementById('sections');
+let allButtons = [];
+
+function cleanDomain(raw){
+  let d = raw.trim().toLowerCase();
+  d = d.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  return d;
+}
+
+function isValidDomain(d){
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d);
+}
+
+function render(){
+  sectionsEl.innerHTML = '';
+  allButtons = [];
+  DORKS.forEach((section, si) => {
+    const sec = document.createElement('div');
+    sec.className = 'section';
+
+    const head = document.createElement('div');
+    head.className = 'section-head';
+    head.innerHTML = `<span class="n">${String(si+1).padStart(2,'0')}</span><h2>${section.title}</h2><span class="rule"></span>`;
+    const openAllBtn = document.createElement('button');
+    openAllBtn.className = 'openall';
+    openAllBtn.textContent = 'open all';
+    openAllBtn.disabled = true;
+    head.appendChild(openAllBtn);
+    sec.appendChild(head);
+
+    const desc = document.createElement('p');
+    desc.className = 'section-desc';
+    desc.textContent = section.desc;
+    sec.appendChild(desc);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    const sectionButtons = [];
+
+    section.items.forEach(([label, fn, type]) => {
+      const isDirect = type === 'direct';
+      const btn = document.createElement('button');
+      btn.className = 'dork';
+      btn.disabled = true;
+      const labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = label + (isDirect ? '' : '');
+      const qEl = document.createElement('span');
+      qEl.className = 'q';
+      if(isDirect){
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = 'EXTERNAL ↗';
+        btn.appendChild(labelEl);
+        btn.appendChild(tag);
+      } else {
+        btn.appendChild(labelEl);
+        btn.appendChild(qEl);
+      }
+      btn._fn = fn;
+      btn._qEl = qEl;
+      btn._isDirect = isDirect;
+      btn._openUrl = null;
+      btn.addEventListener('click', () => {
+        if(btn._openUrl) window.open(btn._openUrl, '_blank');
+      });
+      grid.appendChild(btn);
+      allButtons.push(btn);
+      sectionButtons.push(btn);
+    });
+
+    openAllBtn.addEventListener('click', () => {
+      sectionButtons.forEach(b => { if(b._openUrl) window.open(b._openUrl, '_blank'); });
+    });
+    section._openAllBtn = openAllBtn;
+    section._buttons = sectionButtons;
+
+    sec.appendChild(grid);
+    sectionsEl.appendChild(sec);
+  });
+  updateButtons();
+}
+
+function updateButtons(){
+  const raw = domainInput.value;
+  const d = cleanDomain(raw);
+  const valid = raw.trim().length > 0 && isValidDomain(d);
+  allButtons.forEach(btn => {
+    btn.disabled = !valid;
+    if(!valid){
+      btn._openUrl = null;
+      if(!btn._isDirect) btn._qEl.textContent = '—';
+      return;
+    }
+    if(btn._isDirect){
+      btn._openUrl = btn._fn(d);
+    } else {
+      const q = btn._fn(d);
+      btn._qEl.textContent = q;
+      btn._openUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+    }
+  });
+  DORKS.forEach(section => { if(section._openAllBtn) section._openAllBtn.disabled = !valid; });
+  if(raw.trim().length === 0){
+    statusEl.textContent = 'enter a domain to arm the queries below';
+    statusEl.className = 'status';
+  } else if(!valid){
+    statusEl.textContent = 'that doesn\'t look like a valid domain yet';
+    statusEl.className = 'status';
+  } else {
+    statusEl.textContent = `armed — ${allButtons.length} queries ready for ${d}`;
+    statusEl.className = 'status armed';
+  }
+}
+
+domainInput.addEventListener('input', updateButtons);
+domainInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter'){
+    const first = allButtons.find(b => !b.disabled);
+    if(first) first.click();
+  }
+});
+
+function tickClock(){
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toISOString().replace('T',' ').slice(0,19) + ' UTC';
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+render();
+domainInput.focus();
+</script>
+</body>
+</html>
